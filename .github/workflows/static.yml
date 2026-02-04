@@ -30,10 +30,9 @@ jobs:
 
       - name: Commit and push the changes
         run: |
-          cd pages
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add index.htmk # Add the specific copied file
+          git add index.html # Add the specific copied file
           git commit -m "Sync file from raff/windex" || echo "No changes to commit"
           git push
         #env:
