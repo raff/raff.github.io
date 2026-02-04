@@ -1,4 +1,4 @@
-name: Copy File from Another Repo
+name: Copy File from Windex
 
 on:
   push:
