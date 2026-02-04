@@ -335,6 +335,11 @@
       font-family: "Work Sans", "Helvetica Neue", sans-serif;
     }
 
+    .hint.warning {
+      opacity: 1;
+      color: #c45b2f;
+    }
+
     @keyframes rise {
       from { transform: translateY(8px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
@@ -384,9 +389,19 @@
       <h3>Edit page title</h3>
       <input id="metaTitleInput" placeholder="Page title" />
       <input id="metaSubtitleInput" placeholder="Page subtitle" />
+      <h3>Custom head HTML</h3>
+      <textarea
+        id="metaHeadInput"
+        placeholder="Paste <script>, <link>, <style>, or <meta> tags to load in <head>"
+      ></textarea>
+      <div class="hint">These tags load globally. For security, only add sources you trust.</div>
+      <div class="hint" id="metaHeadFeedback"></div>
       <div class="controls">
         <button class="secondary" id="cancelMeta">Cancel</button>
         <button id="saveMeta">Save</button>
+        <button class="secondary" id="saveMetaAnyway" title="Save sanitized head HTML even with warnings">
+          Save anyway
+        </button>
       </div>
     </div>
   </div>
@@ -457,10 +472,15 @@
     const panelHeading = document.getElementById("panelHeading");
     const metaTitleInput = document.getElementById("metaTitleInput");
     const metaSubtitleInput = document.getElementById("metaSubtitleInput");
+    const metaHeadInput = document.getElementById("metaHeadInput");
+    const metaHeadFeedback = document.getElementById("metaHeadFeedback");
+    const saveMetaAnyway = document.getElementById("saveMetaAnyway");
     const confirmOverlay = document.getElementById("confirmOverlay");
 
     let gridCols = DEFAULT_GRID_COLS;
     let gridRows = DEFAULT_GRID_ROWS;
+    let headHtml = "";
+    let headHtmlUnsafe = false;
 
     function setGridSize(cols, rows) {
       gridCols = cols;
@@ -621,6 +641,18 @@
         border: "rgba(246, 242, 234, 0.2)",
         "border-soft": "rgba(246, 242, 234, 0.08)",
       },
+      lightish: {
+        "bg-1": "#eef3f8",
+        "bg-2": "#e2ebf3",
+        ink: "#1b2633",
+        accent: "#6d9bcf",
+        "grid-line": "rgba(27, 38, 51, 0.12)",
+        "grid-wrap": "linear-gradient(145deg, #f6f9fc, #dde7f1)",
+        card: "#f8fbff",
+        shadow: "rgba(27, 38, 51, 0.18)",
+        border: "rgba(27, 38, 51, 0.16)",
+        "border-soft": "rgba(27, 38, 51, 0.08)",
+      },
     };
 
     let themeMap = { ...DEFAULT_THEMES };
@@ -660,12 +692,78 @@
         subtitle: "Drag widgets by the header, resize from the corner, snap to the grid.",
         gridCols: DEFAULT_GRID_COLS,
         gridRows: DEFAULT_GRID_ROWS,
-        theme: "light",
+        theme: "lightish",
         themes: DEFAULT_THEMES,
+        headHtml: "",
+        headHtmlUnsafe: false,
       };
     }
 
+    function sanitizeHeadHtml(raw) {
+      const allowedTags = new Set(["SCRIPT", "LINK", "STYLE", "META"]);
+      const template = document.createElement("template");
+      template.innerHTML = raw || "";
+      const issues = [];
+
+      Array.from(template.content.querySelectorAll("*")).forEach((el) => {
+        const tag = el.tagName;
+        if (!allowedTags.has(tag)) {
+          issues.push(`<${tag.toLowerCase()}>`);
+          el.remove();
+          return;
+        }
+        Array.from(el.attributes).forEach((attr) => {
+          const name = attr.name;
+          const value = attr.value || "";
+          if (name.toLowerCase().startsWith("on")) {
+            el.removeAttribute(name);
+            issues.push(`inline handler "${name}"`);
+            return;
+          }
+          if ((name === "src" || name === "href") && value.trim().toLowerCase().startsWith("javascript:")) {
+            el.removeAttribute(name);
+            issues.push(`javascript: URL in ${name}`);
+          }
+        });
+      });
+
+      const container = document.createElement("div");
+      Array.from(template.content.childNodes).forEach((node) => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        container.appendChild(node.cloneNode(true));
+      });
+
+      return { html: container.innerHTML.trim(), issues };
+    }
+
+    function applyHeadHtml(nextHeadHtml, options = {}) {
+      const { sanitize = true, unsafe = false } = options;
+      document.querySelectorAll("[data-windex-head]").forEach((node) => node.remove());
+      let nextHtml = typeof nextHeadHtml === "string" ? nextHeadHtml.trim() : "";
+      if (sanitize) {
+        const sanitized = sanitizeHeadHtml(nextHtml);
+        if (sanitized.issues.length) {
+          console.warn("Head HTML sanitized:", sanitized.issues);
+        }
+        nextHtml = sanitized.html;
+        headHtmlUnsafe = false;
+      } else {
+        headHtmlUnsafe = unsafe;
+      }
+      headHtml = nextHtml;
+      if (!headHtml) return;
+      const template = document.createElement("template");
+      template.innerHTML = headHtml;
+      Array.from(template.content.childNodes).forEach((node) => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        const el = node;
+        el.setAttribute("data-windex-head", "1");
+        document.head.appendChild(el);
+      });
+    }
+
     function saveMeta() {
+      document.title = pageTitle.textContent;
       localStorage.setItem(
         META_KEY,
         JSON.stringify({
@@ -675,6 +773,8 @@
           gridRows,
           theme: body.dataset.theme || "light",
           themes: themeMap,
+          headHtml,
+          headHtmlUnsafe,
         })
       );
     }
@@ -718,6 +818,8 @@
           gridRows,
           theme: body.dataset.theme || "light",
           themes: themeMap,
+          headHtml,
+          headHtmlUnsafe,
         },
         widgets: getWidgetsFromDom(),
       };
@@ -928,12 +1030,18 @@
       metaOverlay.classList.add("active");
       metaTitleInput.value = pageTitle.textContent;
       metaSubtitleInput.value = pageSubtitle.textContent;
+      metaHeadInput.value = headHtml;
+      metaHeadFeedback.textContent = "";
+      metaHeadFeedback.classList.remove("warning");
     }
 
     function closeMetaEditor() {
       metaOverlay.classList.remove("active");
       metaTitleInput.value = "";
       metaSubtitleInput.value = "";
+      metaHeadInput.value = "";
+      metaHeadFeedback.textContent = "";
+      metaHeadFeedback.classList.remove("warning");
     }
 
     function openClearConfirm() {
@@ -1053,8 +1161,51 @@
       pageSubtitle.textContent =
         metaSubtitleInput.value.trim() ||
         "Drag widgets by the header, resize from the corner, snap to the grid.";
+      const sanitizedHead = sanitizeHeadHtml(metaHeadInput.value);
+      if (sanitizedHead.issues.length) {
+        metaHeadInput.value = sanitizedHead.html;
+        metaHeadFeedback.textContent = `Adjusted head HTML: ${sanitizedHead.issues.slice(0, 3).join(" ")}${
+          sanitizedHead.issues.length > 3 ? " More removed." : ""
+        }`;
+        metaHeadFeedback.classList.add("warning");
+        return;
+      }
+      metaHeadFeedback.classList.remove("warning");
+      applyHeadHtml(sanitizedHead.html, { sanitize: false });
       saveMeta();
       closeMetaEditor();
+    });
+
+    saveMetaAnyway.addEventListener("click", () => {
+      pageTitle.textContent = metaTitleInput.value.trim() || "Windex Home";
+      pageSubtitle.textContent =
+        metaSubtitleInput.value.trim() ||
+        "Drag widgets by the header, resize from the corner, snap to the grid.";
+      const sanitizedHead = sanitizeHeadHtml(metaHeadInput.value);
+      if (sanitizedHead.issues.length) {
+        metaHeadFeedback.textContent = `Adjusted head HTML: ${sanitizedHead.issues.slice(0, 3).join(" ")}${
+          sanitizedHead.issues.length > 3 ? " More removed." : ""
+        }`;
+        metaHeadFeedback.classList.add("warning");
+      } else {
+        metaHeadFeedback.classList.remove("warning");
+      }
+      applyHeadHtml(metaHeadInput.value, { sanitize: false, unsafe: true });
+      saveMeta();
+      closeMetaEditor();
+    });
+
+    metaHeadInput.addEventListener("input", () => {
+      const sanitized = sanitizeHeadHtml(metaHeadInput.value);
+      if (sanitized.issues.length) {
+        metaHeadFeedback.textContent = `Will remove: ${sanitized.issues.slice(0, 3).join(" ")}${
+          sanitized.issues.length > 3 ? " More removed." : ""
+        }`;
+        metaHeadFeedback.classList.add("warning");
+      } else {
+        metaHeadFeedback.textContent = "";
+        metaHeadFeedback.classList.remove("warning");
+      }
     });
 
     document.getElementById("cancelMeta").addEventListener("click", closeMetaEditor);
@@ -1098,6 +1249,12 @@
         if (incomingMeta) {
           pageTitle.textContent = incomingMeta.title || pageTitle.textContent;
           pageSubtitle.textContent = incomingMeta.subtitle || pageSubtitle.textContent;
+          if (typeof incomingMeta.headHtml === "string") {
+            applyHeadHtml(incomingMeta.headHtml, {
+              sanitize: !incomingMeta.headHtmlUnsafe,
+              unsafe: Boolean(incomingMeta.headHtmlUnsafe),
+            });
+          }
           if (Number.isFinite(incomingMeta.gridCols) && Number.isFinite(incomingMeta.gridRows)) {
             setGridSize(incomingMeta.gridCols, incomingMeta.gridRows);
           }
@@ -1143,6 +1300,8 @@
       const meta = loadMeta();
       pageTitle.textContent = meta.title;
       pageSubtitle.textContent = meta.subtitle;
+      document.title = meta.title;
+      applyHeadHtml(meta.headHtml, { sanitize: !meta.headHtmlUnsafe, unsafe: Boolean(meta.headHtmlUnsafe) });
       themeMap = buildThemeMap(meta.themes);
       applyTheme(meta.theme, themeMap);
 
