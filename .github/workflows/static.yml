@@ -25,7 +25,7 @@ jobs:
 
       - name: Copy the specific file
         run: |
-          cp windex/index.html pages/index.html
+          cp windex/index.html ./index.html
         # Adjust source and destination paths as needed
 
       - name: Commit and push the changes
