@@ -1,0 +1,40 @@
+name: Copy File from Another Repo
+
+on:
+  push:
+    branches:
+      - main # Trigger on push to the main branch (adjust as needed)
+  workflow_dispatch: # Allows running the workflow manually
+
+jobs:
+  copy-file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the destination repo (current repo)
+        uses: actions/checkout@v4
+        with:
+          path: '.' # Clones into a subdirectory
+          # The default GITHUB_TOKEN is usually sufficient for the current repo
+
+      - name: Checkout the source repo
+        uses: actions/checkout@v4
+        with:
+          repository: 'raff/windex' # e.g., 'octocat/Hello-World'
+          path: 'windex' # Clones into a different subdirectory
+          token: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT secret
+
+      - name: Copy the specific file
+        run: |
+          cp windex/index.html pages/index.html
+        # Adjust source and destination paths as needed
+
+      - name: Commit and push the changes
+        run: |
+          cd pages
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add index.htmk # Add the specific copied file
+          git commit -m "Sync file from raff/windex" || echo "No changes to commit"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT for push permissions
