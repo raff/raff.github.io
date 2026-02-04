@@ -36,5 +36,5 @@ jobs:
           git add index.htmk # Add the specific copied file
           git commit -m "Sync file from raff/windex" || echo "No changes to commit"
           git push
-        env:
-          #GITHUB_TOKEN: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT for push permissions
+        #env:
+        # GITHUB_TOKEN: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT for push permissions
