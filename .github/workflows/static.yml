@@ -21,7 +21,7 @@ jobs:
         with:
           repository: 'raff/windex' # e.g., 'octocat/Hello-World'
           path: 'windex' # Clones into a different subdirectory
-          token: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT secret
+          #token: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT secret
 
       - name: Copy the specific file
         run: |
@@ -37,4 +37,4 @@ jobs:
           git commit -m "Sync file from raff/windex" || echo "No changes to commit"
           git push
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT for push permissions
+          #GITHUB_TOKEN: ${{ secrets.PAT_FOR_OTHER_REPO }} # Use the PAT for push permissions
